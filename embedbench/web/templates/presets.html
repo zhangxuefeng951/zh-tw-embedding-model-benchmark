@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}預設檔{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>預設檔</h1>
+    <p>內建預設檔放在專案的 <code>presets/embedding.yaml</code>、<code>presets/reranker.yaml</code>（跟著 git 版控，修改後重新整理即可）；自訂預設檔存在本機資料庫，可以匯出 YAML 貼進內建檔案。</p>
+  </div>
+</div>
+<div class="tabs">
+  <button type="button" data-kind="embedding" class="active">Embedding</button>
+  <button type="button" data-kind="reranker">Reranker</button>
+</div>
+<div class="card">
+  <input id="search" type="search" placeholder="搜尋名稱、模型、前綴…" style="margin-bottom: 12px">
+  <div id="list"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/presets.js') }}?v={{ version }}"></script>
+{% endblock %}

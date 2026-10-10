@@ -1,0 +1,484 @@
+# Embedding 模型預設檔
+#
+# 新增模型：複製一段改一改即可，Web UI 重新整理就會看到（不必重啟）。
+# 也可以在 Web UI「新增評測」頁調好設定後按「另存為自訂預設檔」，再到「預設檔」頁匯出 YAML 貼進來。
+#
+# 欄位說明：
+#   provider         預設使用的 provider（openai = /v1/embeddings 相容 API）
+#   params           該 provider 的參數（model、base_url ...）
+#   provider_params  切換成其他 provider 時要套用的參數，例如改成本地 sentence-transformers 載入
+#   prefix_pairs     前綴組合：query＝查詢前綴、document＝文件前綴、default＝預設勾選
+#                    文件前綴可使用 {title}（文件標題，沒有標題時代入 none）與 {text}（原文；省略時接在前綴後面）
+#                    注意：前綴尾端的空白也算在前綴內，請用雙引號包住
+#   suggested_dims   建議比較的向量維度（Matryoshka），評測時可勾選，由系統截取並重新正規化
+
+presets:
+  # ---------------------------------------------------------------- E5
+  - id: multilingual-e5-large
+    name: E5：intfloat/multilingual-e5-large
+    description: '多語言 E5（支援中文）。查詢加 "query: "、文件加 "passage: "，缺少前綴會明顯影響檢索品質。'
+    provider: openai
+    params:
+      base_url: http://localhost:8000/v1
+      model: intfloat/multilingual-e5-large
+    provider_params:
+      sentence_transformers:
+        model: intfloat/multilingual-e5-large
+    prefix_pairs:
+      - label: E5 檢索（query / passage）
+        query: "query: "
+        document: "passage: "
+        default: true
+      - label: E5 對稱任務（兩端都用 query）
+        query: "query: "
+        document: "query: "
+      - label: 無前綴（對照組）
+        query: ""
+        document: ""
+    notes:
+      - '官方建議：檢索任務查詢用 "query: "、文件用 "passage: "；相似度等對稱任務兩端都用 "query: "。'
+
+  - id: e5-large-v2
+    name: E5：intfloat/e5-large-v2
+    description: 英文版 E5，前綴規則與多語言版相同；中文效果通常較差，可當作對照。
+    provider: openai
+    params:
+      base_url: http://localhost:8000/v1
+      model: intfloat/e5-large-v2
+    provider_params:
+      sentence_transformers:
+        model: intfloat/e5-large-v2
+    prefix_pairs:
+      - label: E5 檢索（query / passage）
+        query: "query: "
+        document: "passage: "
+        default: true
+      - label: 無前綴（對照組）
+        query: ""
+        document: ""
+
+  - id: multilingual-e5-large-instruct
+    name: E5：intfloat/multilingual-e5-large-instruct
+    description: '指令版 E5。查詢前綴是「Instruct: 任務描述 + 換行 + Query: 」，文件不加前綴。'
+    provider: openai
+    params:
+      base_url: http://localhost:8000/v1
+      model: intfloat/multilingual-e5-large-instruct
+    provider_params:
+      sentence_transformers:
+        model: intfloat/multilingual-e5-large-instruct
+    prefix_pairs:
+      - label: 網頁搜尋指令（官方範例）
+        query: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
+        document: ""
+        default: true
+      - label: 問答指令
+        query: "Instruct: Given a question, retrieve passages that answer the question\nQuery: "
+        document: ""
+      - label: 無前綴（對照組）
+        query: ""
+        document: ""
+    notes:
+      - '文件端不加指令；任務描述可以自行修改，但要保持英文與 "Instruct: ...\nQuery: " 格式。'
+
+  # ---------------------------------------------------------------- EmbeddingGemma
+  - id: embeddinggemma-2
+    name: EmbeddingGemma 2：google/embeddinggemma-2
+    description: Google EmbeddingGemma 2。查詢與文件使用不同的任務前綴；支援 768 / 512 / 256 / 128 維。
+    provider: openai
+    params:
+      base_url: http://localhost:8000/v1
+      model: google/embeddinggemma-2
+    provider_params:
+      sentence_transformers:
+        model: google/embeddinggemma-2
+        dtype: bfloat16
+        load_kwargs:
+          config_kwargs:
+            vision_config: null
+            audio_config: null
+    suggested_dims: [768, 512, 256, 128]
+    prefix_pairs:
+      - label: 搜尋文件（search result）
+        query: "task: search result | query: "
+        document: "title: none | text: "
+        default: true
+      - label: 問答系統（question answering）
+        query: "task: question answering | query: "
+        document: "title: none | text: "
+        default: true
+      - label: 搜尋文件＋文件標題
+        query: "task: search result | query: "
+        document: "title: {title} | text: "
+      - label: 問答系統＋文件標題
+        query: "task: question answering | query: "
+        document: "title: {title} | text: "
+      - label: 文字分類（classification）
+        query: "task: classification | query: "
+        document: "title: none | text: "
+      - label: 文字相似度（兩端相同前綴）
+        query: "task: sentence similarity | query: "
+        document: "task: sentence similarity | query: "
+      - label: 無前綴（對照組）
+        query: ""
+        document: ""
+    notes:
+      - 不要使用 float16（可能產生 NaN 或不報錯卻降低品質）；請用 bfloat16 或 float32。
+      - '中文內容仍保留官方英文前綴格式，不要翻譯 title: / text: 等標記。'
+      - '不要沿用 E5 的 query: / passage: 格式。'
+      - 自行啟動的 API 服務若會自動加前綴，請把這裡的前綴清空，避免重複加前綴。
+      - 「＋文件標題」組合會把資料集的文章標題代入 {title}；沒有標題的資料集會代入 none。
+      - 本地載入需要 sentence-transformers 6.1.0 以上與 transformers 5.19.0 以上。
+
+  - id: embeddinggemma-300m
+    name: EmbeddingGemma：google/embeddinggemma-300m
+    description: 第一代 EmbeddingGemma（舊版 index-embeddinggemma.py 使用 encode_query / encode_document，等同下方預設前綴）。
+    provider: sentence_transformers
+    params:
+      model: google/embeddinggemma-300m
+      dtype: bfloat16
+    provider_params:
+      openai:
+        base_url: http://localhost:8000/v1
+        model: google/embeddinggemma-300m
+    suggested_dims: [768, 512, 256, 128]
+    prefix_pairs:
+      - label: 搜尋文件（search result）
+        query: "task: search result | query: "
+        document: "title: none | text: "
+        default: true
+      - label: 問答系統（question answering）
+        query: "task: question answering | query: "
+        document: "title: none | text: "
+      - label: 無前綴（對照組）
+        query: ""
+        document: ""
+    notes:
+      - 不要使用 float16。
+
+  # ---------------------------------------------------------------- 雲端 API
+  - id: openai-text-embedding-3-small
+    name: OpenAI：text-embedding-3-small
+    provider: openai
+    params:
+      base_url: https://api.openai.com/v1
+      model: text-embedding-3-small
+      api_key_env: OPENAI_API_KEY
+      batch_size: 128
+    suggested_dims: [1536, 1024, 512, 256]
+
+  - id: openai-text-embedding-3-large
+    name: OpenAI：text-embedding-3-large
+    provider: openai
+    params:
+      base_url: https://api.openai.com/v1
+      model: text-embedding-3-large
+      api_key_env: OPENAI_API_KEY
+      batch_size: 128
+    suggested_dims: [3072, 1536, 1024, 512, 256]
+
+  - id: mistral-embed
+    name: Mistral：mistral-embed
+    provider: openai
+    params:
+      base_url: https://api.mistral.ai/v1
+      model: mistral-embed
+      api_key_env: MISTRAL_API_KEY
+      batch_size: 64
+      concurrency: 2
+
+  - id: cohere-embed-v4
+    name: Cohere：embed-v4.0
+    provider: cohere
+    params:
+      model: embed-v4.0
+      api_key_env: COHERE_API_KEY
+    suggested_dims: [1536, 1024, 512, 256]
+    notes:
+      - Cohere 以 input_type（search_query / search_document）區分查詢與文件，不需要文字前綴。
+
+  - id: voyage-3.5
+    name: Voyage：voyage-3.5
+    provider: voyage
+    params:
+      model: voyage-3.5
+      api_key_env: VOYAGE_API_KEY
+    suggested_dims: [1024, 512, 256]
+
+  - id: voyage-multilingual-2
+    name: Voyage：voyage-multilingual-2
+    provider: voyage
+    params:
+      model: voyage-multilingual-2
+      api_key_env: VOYAGE_API_KEY
+
+  - id: voyage-multimodal-3
+    name: Voyage：voyage-multimodal-3
+    provider: voyage
+    params:
+      model: voyage-multimodal-3
+      endpoint: multimodalembeddings
+      api_key_env: VOYAGE_API_KEY
+      batch_size: 32
+
+  - id: gemini-embedding-001
+    name: Google：gemini-embedding-001（Gemini API）
+    provider: gemini
+    params:
+      model: gemini-embedding-001
+      api_key_env: GEMINI_API_KEY
+    suggested_dims: [3072, 1536, 768]
+    notes:
+      - 舊版 index-gemini.py 沒有設定 taskType；要重現舊結果請把兩個 taskType 清空。
+
+  - id: vertex-text-multilingual-embedding-002
+    name: Google：text-multilingual-embedding-002（Vertex AI）
+    provider: vertex
+    params:
+      model: text-multilingual-embedding-002
+      location: us-central1
+    notes:
+      - 需要 GCP_PROJECT_ID 與 GCP_ACCESS_TOKEN（或已登入的 gcloud）。
+      - 舊版 index-vertex.py 沒有設定 task_type；要重現舊結果請把兩個 task_type 清空。
+
+  # ---------------------------------------------------------------- 本地 sentence-transformers
+  - id: qwen3-embedding-4b
+    name: Qwen：Qwen/Qwen3-Embedding-4B
+    provider: sentence_transformers
+    params:
+      model: Qwen/Qwen3-Embedding-4B
+    provider_params:
+      openai:
+        base_url: http://localhost:8000/v1
+        model: Qwen/Qwen3-Embedding-4B
+    suggested_dims: [2560, 1024, 512, 256]
+    prefix_pairs:
+      - label: 官方查詢指令（網頁搜尋）
+        query: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:"
+        document: ""
+        default: true
+      - label: 無前綴（對照組）
+        query: ""
+        document: ""
+    notes:
+      - 等同舊版 index-qwen3.py 的 prompt_name="query"（查詢加指令、文件不加）。
+
+  - id: nvidia-nv-embed-v2
+    name: NVIDIA：nvidia/NV-Embed-v2
+    provider: sentence_transformers
+    params:
+      model: nvidia/NV-Embed-v2
+      trust_remote_code: true
+      append_eos: true
+      max_seq_length: 32768
+    prefix_pairs:
+      - label: 問答指令（舊版設定）
+        query: "Instruct: Given a question, retrieve passages that answer the question\nQuery: "
+        document: ""
+        default: true
+    notes:
+      - 需要在文字後補 EOS 標記（已開啟 append_eos）。
+
+  - id: nomic-embed-text-v2-moe
+    name: Nomic：nomic-ai/nomic-embed-text-v2-moe
+    provider: sentence_transformers
+    params:
+      model: nomic-ai/nomic-embed-text-v2-moe
+      trust_remote_code: true
+    suggested_dims: [768, 256]
+    prefix_pairs:
+      - label: search_query / search_document
+        query: "search_query: "
+        document: "search_document: "
+        default: true
+
+  - id: nomic-embed-text-v1.5
+    name: Nomic：nomic-ai/nomic-embed-text-v1.5
+    provider: sentence_transformers
+    params:
+      model: nomic-ai/nomic-embed-text-v1.5
+      trust_remote_code: true
+    suggested_dims: [768, 512, 256, 128, 64]
+    prefix_pairs:
+      - label: search_query / search_document
+        query: "search_query: "
+        document: "search_document: "
+        default: true
+
+  - id: jina-embeddings-v4
+    name: Jina：jinaai/jina-embeddings-v4
+    provider: sentence_transformers
+    params:
+      model: jinaai/jina-embeddings-v4
+      trust_remote_code: true
+      query_extra: {task: retrieval, prompt_name: query}
+      document_extra: {task: retrieval, prompt_name: passage}
+    notes:
+      - 由 sentence-transformers 的 prompt_name 套用 Query / Passage 前綴，所以這裡的文字前綴留空。
+
+  - id: jina-embeddings-v3
+    name: Jina：jinaai/jina-embeddings-v3
+    provider: sentence_transformers
+    params:
+      model: jinaai/jina-embeddings-v3
+      trust_remote_code: true
+      query_extra: {task: retrieval.query, prompt_name: retrieval.query}
+      document_extra: {task: retrieval.passage, prompt_name: retrieval.passage}
+    suggested_dims: [1024, 512, 256, 128]
+    notes:
+      - 由 task 選擇 LoRA adapter、由 prompt_name 套用前綴，所以這裡的文字前綴留空。
+
+  - id: jina-embeddings-v2-base-zh
+    name: Jina：jinaai/jina-embeddings-v2-base-zh
+    provider: sentence_transformers
+    params:
+      model: jinaai/jina-embeddings-v2-base-zh
+      trust_remote_code: true
+
+  - id: bge-m3
+    name: BAAI：BAAI/bge-m3
+    provider: sentence_transformers
+    params:
+      model: BAAI/bge-m3
+
+  - id: bge-large-zh-v1.5
+    name: BAAI：BAAI/bge-large-zh-v1.5
+    provider: sentence_transformers
+    params:
+      model: BAAI/bge-large-zh-v1.5
+    prefix_pairs: &bge_zh_pairs
+      - label: 無前綴（舊版設定）
+        query: ""
+        document: ""
+        default: true
+      - label: BGE 官方查詢指令
+        query: "为这个句子生成表示以用于检索相关文章："
+        document: ""
+
+  - id: bge-base-zh-v1.5
+    name: BAAI：BAAI/bge-base-zh-v1.5
+    provider: sentence_transformers
+    params:
+      model: BAAI/bge-base-zh-v1.5
+    prefix_pairs: *bge_zh_pairs
+
+  - id: bge-small-zh-v1.5
+    name: BAAI：BAAI/bge-small-zh-v1.5
+    provider: sentence_transformers
+    params:
+      model: BAAI/bge-small-zh-v1.5
+    prefix_pairs: *bge_zh_pairs
+
+  - id: multilingual-e5-base
+    name: E5：intfloat/multilingual-e5-base
+    provider: sentence_transformers
+    params:
+      model: intfloat/multilingual-e5-base
+    prefix_pairs: &e5_pairs
+      - label: E5 檢索（query / passage）
+        query: "query: "
+        document: "passage: "
+        default: true
+      - label: 無前綴（對照組）
+        query: ""
+        document: ""
+
+  - id: multilingual-e5-small
+    name: E5：intfloat/multilingual-e5-small
+    provider: sentence_transformers
+    params:
+      model: intfloat/multilingual-e5-small
+    prefix_pairs: *e5_pairs
+
+  - id: gte-large-zh
+    name: GTE：thenlper/gte-large-zh
+    provider: sentence_transformers
+    params:
+      model: thenlper/gte-large-zh
+
+  - id: gte-base-zh
+    name: GTE：thenlper/gte-base-zh
+    provider: sentence_transformers
+    params:
+      model: thenlper/gte-base-zh
+
+  - id: gte-small-zh
+    name: GTE：thenlper/gte-small-zh
+    provider: sentence_transformers
+    params:
+      model: thenlper/gte-small-zh
+
+  - id: bce-embedding-base-v1
+    name: 網易有道：maidalun1020/bce-embedding-base_v1
+    provider: sentence_transformers
+    params:
+      model: maidalun1020/bce-embedding-base_v1
+
+  - id: acge-text-embedding
+    name: aspire/acge_text_embedding
+    provider: sentence_transformers
+    params:
+      model: aspire/acge_text_embedding
+
+  - id: dmeta-embedding-zh
+    name: DMetaSoul/Dmeta-embedding-zh
+    provider: sentence_transformers
+    params:
+      model: DMetaSoul/Dmeta-embedding-zh
+
+  - id: stella-mrl-large-zh-v3.5-1792d
+    name: Stella：infgrad/stella-mrl-large-zh-v3.5-1792d
+    provider: sentence_transformers
+    params:
+      model: infgrad/stella-mrl-large-zh-v3.5-1792d
+    suggested_dims: [1792, 1024, 768, 512, 256]
+
+  - id: stella-large-zh-v2
+    name: Stella：infgrad/stella-large-zh-v2
+    provider: sentence_transformers
+    params:
+      model: infgrad/stella-large-zh-v2
+
+  - id: stella-base-zh-v2
+    name: Stella：infgrad/stella-base-zh-v2
+    provider: sentence_transformers
+    params:
+      model: infgrad/stella-base-zh-v2
+
+  - id: all-minilm-l6-v2
+    name: sentence-transformers/all-MiniLM-L6-v2
+    description: 英文小模型，可當作中文檢索的下限對照。
+    provider: sentence_transformers
+    params:
+      model: sentence-transformers/all-MiniLM-L6-v2
+
+  # ---------------------------------------------------------------- 其他本地載入方式
+  - id: chuxin-embedding
+    name: Chuxin：chuxin-llm/Chuxin-Embedding（FlagEmbedding）
+    provider: flag_embedding
+    params:
+      model: chuxin-llm/Chuxin-Embedding
+
+  - id: potion-base-32m
+    name: Model2Vec：minishlab/potion-base-32M
+    provider: model2vec
+    params:
+      model: minishlab/potion-base-32M
+
+  - id: ckiplab-bert-base-chinese
+    name: CKIP：ckiplab/bert-base-chinese（CLS pooling）
+    description: 未經檢索訓練的 BERT，取 [CLS] 向量，作為對照組（等同舊版 index-ckiplab.py）。
+    provider: transformers
+    params:
+      model: ckiplab/bert-base-chinese
+      pooling: cls
+      max_length: 512
+
+  # ---------------------------------------------------------------- 範本
+  - id: custom-openai-compatible
+    name: 自訂：任何 /v1/embeddings 服務
+    description: 從空白設定開始：填入 API 端點、模型名稱與前綴。
+    provider: openai
+    params:
+      base_url: http://localhost:8000/v1
+      model: ""

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}任務{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>任務</h1>
+    <p>評測在背景依序執行，同時執行的任務數上限為 <strong id="max-jobs">1</strong>（可以在<a href="/settings">設定</a>修改）。關掉瀏覽器不影響執行。</p>
+  </div>
+  <a class="btn primary" href="/new">＋ 新增評測</a>
+</div>
+<div class="card">
+  <div id="jobs"><div class="empty"><span class="spinner"></span></div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/jobs.js') }}?v={{ version }}"></script>
+{% endblock %}

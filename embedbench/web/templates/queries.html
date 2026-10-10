@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}逐題錯誤分析{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small"><a href="/results/{{ result_id }}" id="back">← 回到結果</a></p>
+    <h1>逐題錯誤分析</h1>
+    <p id="subtitle"></p>
+  </div>
+</div>
+<div class="card">
+  <div class="row" style="gap: 16px; align-items: flex-end">
+    <label class="field" style="width: 110px">
+      <span class="field-label">K</span>
+      <select id="k"></select>
+    </label>
+    <label class="field" style="width: 170px">
+      <span class="field-label">顯示</span>
+      <select id="status">
+        <option value="miss">未命中（正解排在 K 名外）</option>
+        <option value="all">全部題目</option>
+        <option value="hit">命中</option>
+      </select>
+    </label>
+    <label class="field" style="width: 190px">
+      <span class="field-label">排序</span>
+      <select id="sort">
+        <option value="index">資料集原順序</option>
+        <option value="rank_desc">正解名次：最差的在前</option>
+        <option value="rank_asc">正解名次：最好的在前</option>
+      </select>
+    </label>
+    <label class="field" style="flex: 1; min-width: 200px">
+      <span class="field-label">搜尋問題</span>
+      <input id="search" type="search" placeholder="輸入關鍵字">
+    </label>
+  </div>
+  <p class="small secondary" id="summary" style="margin-top: 12px"></p>
+</div>
+<div class="card">
+  <div id="items"></div>
+  <div class="pager" id="pager"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>window.RESULT_ID = {{ result_id | tojson }};</script>
+<script src="{{ url_for('static', filename='js/queries.js') }}?v={{ version }}"></script>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}排行榜{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>排行榜</h1>
+    <p>同一個資料集的所有評測結果。K 值可以隨時調整，不需要重跑。</p>
+  </div>
+  <a class="btn primary" href="/new">＋ 新增評測</a>
+</div>
+
+<div id="empty" class="card hidden">
+  <div class="empty">
+    <p>還沒有任何評測結果。</p>
+    <p><a class="btn primary" href="/new">新增第一個評測</a></p>
+  </div>
+</div>
+
+<div id="board" class="hidden">
+  <div class="card">
+    <div class="row" style="gap: 18px; align-items: flex-end">
+      <label class="field" style="min-width: 260px">
+        <span class="field-label">資料集</span>
+        <select id="dataset"></select>
+      </label>
+      <label class="field" style="width: 150px">
+        <span class="field-label">K 值</span>
+        <input id="ks" type="text" placeholder="1,3,5,10">
+      </label>
+      <div>
+        <span class="field-label">顯示指標</span>
+        <div class="row" id="metric-toggles"></div>
+      </div>
+      <div>
+        <span class="field-label">類型</span>
+        <div class="row" id="kind-toggles"></div>
+      </div>
+      <label class="field" style="flex: 1; min-width: 180px">
+        <span class="field-label">搜尋</span>
+        <input id="search" type="search" placeholder="模型、標籤、前綴…">
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 id="chart-title">指標比較</h2>
+      <div class="row">
+        <label class="row small secondary">比較指標
+          <select id="chart-metric" style="width: auto"></select>
+        </label>
+      </div>
+    </div>
+    <p class="small muted" id="chart-note"></p>
+    <div id="chart"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>結果列表 <span class="muted small" id="count"></span></h2>
+      <div class="row">
+        <span class="small muted" id="selected-count"></span>
+        <button class="small" id="clear-selection" type="button">取消勾選</button>
+        <button class="small danger" id="delete-selected" type="button">刪除所選</button>
+        <span class="muted small">匯出：</span>
+        <a class="btn small" id="export-csv">CSV</a>
+        <a class="btn small" id="export-json">JSON</a>
+        <a class="btn small" id="export-md">Markdown</a>
+      </div>
+    </div>
+    <div class="table-wrap"><table id="table"></table></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/leaderboard.js') }}?v={{ version }}"></script>
+{% endblock %}

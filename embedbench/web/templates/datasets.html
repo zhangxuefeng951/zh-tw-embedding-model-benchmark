@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}資料集{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>資料集</h1>
+    <p>內建資料集會在第一次使用時自動下載並轉成統一格式（存在 data/datasets/）。也可以上傳自己的資料。</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap"><table id="table"></table></div>
+</div>
+
+<div class="card hidden" id="preview-card">
+  <div class="card-head"><h2 id="preview-title">預覽</h2><button type="button" class="small" id="preview-close">關閉</button></div>
+  <div id="preview"></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>上傳：簡單格式</h2>
+    <p class="small secondary">每列一題，欄位 <code>question</code>、<code>paragraph</code>（必填）與 <code>title</code>（選填）。相同的段落會自動合併成同一篇文件，每題的正解就是它那一列的段落。支援 CSV、TSV、JSONL、JSON 陣列（UTF-8）。</p>
+    <pre class="preview small">question,paragraph,title
+宿舍什麼時候開放申請？,學生應於每學期開學前兩週內完成宿舍申請……,宿舍申請辦法</pre>
+    <form id="simple-form" class="stack" style="margin-top: 12px">
+      <label class="field"><span class="field-label">名稱</span><input name="name" type="text" required></label>
+      <label class="field"><span class="field-label">說明（選填）</span><input name="description" type="text"></label>
+      <label class="field"><span class="field-label">檔案</span><input name="file" type="file" accept=".csv,.tsv,.jsonl,.json" required></label>
+      <input type="hidden" name="format" value="simple">
+      <div class="row end"><button type="submit" class="primary">上傳</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>上傳：BEIR 格式</h2>
+    <p class="small secondary">檢索評測的業界標準格式，支援一題多個正解、正解分級與文件標題。可以上傳 zip（內含 <code>corpus.jsonl</code>、<code>queries.jsonl</code>、<code>qrels/test.tsv</code>），或分別上傳三個檔案。</p>
+    <pre class="preview small">corpus.jsonl   {"_id": "d1", "title": "宿舍申請辦法", "text": "學生應於……"}
+queries.jsonl  {"_id": "q1", "text": "宿舍什麼時候開放申請？"}
+qrels.tsv      query-id	corpus-id	score
+               q1	d1	1</pre>
+    <form id="beir-form" class="stack" style="margin-top: 12px">
+      <label class="field"><span class="field-label">名稱</span><input name="name" type="text" required></label>
+      <label class="field"><span class="field-label">說明（選填）</span><input name="description" type="text"></label>
+      <label class="field"><span class="field-label">zip 檔（或改用下方三個檔案）</span><input name="zip" type="file" accept=".zip"></label>
+      <div class="grid-3">
+        <label class="field"><span class="field-label">corpus.jsonl</span><input name="corpus" type="file" accept=".jsonl"></label>
+        <label class="field"><span class="field-label">queries.jsonl</span><input name="queries" type="file" accept=".jsonl"></label>
+        <label class="field"><span class="field-label">qrels.tsv</span><input name="qrels" type="file" accept=".tsv,.txt"></label>
+      </div>
+      <input type="hidden" name="format" value="beir">
+      <div class="row end"><button type="submit" class="primary">上傳</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/datasets.js') }}?v={{ version }}"></script>
+{% endblock %}

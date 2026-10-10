@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}評測結果{% endblock %}
+{% block content %}
+<div id="result" data-id="{{ result_id }}">
+  <div class="empty"><span class="spinner"></span></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/result.js') }}?v={{ version }}"></script>
+{% endblock %}

@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}新增評測{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>新增評測</h1>
+    <p>模型 API 服務請先自行啟動。系統只負責在文字前加上前綴、呼叫 API、計算檢索指標。</p>
+  </div>
+</div>
+
+<div class="tabs" role="tablist">
+  <button type="button" data-tab="embedding" class="active">Embedding 評測</button>
+  <button type="button" data-tab="rerank">Reranker 二階段評測</button>
+  <button type="button" data-tab="bm25">BM25 基準</button>
+</div>
+
+<!-- ===================================================== Embedding -->
+<section id="tab-embedding">
+  <div class="card">
+    <h2>1. 模型</h2>
+    <div class="grid-2">
+      <label class="field">
+        <span class="field-label">預設檔</span>
+        <select id="e-preset"></select>
+        <span class="field-help">選擇後會自動帶入 API 設定與建議的前綴；之後仍可自由修改。</span>
+      </label>
+      <label class="field">
+        <span class="field-label">顯示名稱</span>
+        <input id="e-label" type="text">
+        <span class="field-help">排行榜上顯示的名稱；留空則使用模型名稱。</span>
+      </label>
+    </div>
+    <div id="e-preset-info"></div>
+    <div class="grid-2" style="margin-top: 14px">
+      <label class="field">
+        <span class="field-label">Provider（呼叫方式）</span>
+        <select id="e-provider"></select>
+      </label>
+      <div class="field-help" id="e-provider-desc" style="align-self: end"></div>
+    </div>
+    <div id="e-params" style="margin-top: 14px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>2. 前綴組合</h2>
+      <button type="button" class="small" id="e-add-pair">＋ 新增組合</button>
+    </div>
+    <p class="small secondary">
+      每一組是「查詢前綴 + 文件前綴」，勾選多組可以一次比較；文件前綴相同的組合會共用同一份文件向量。
+      文件前綴可以寫 <code>{title}</code>（文件標題，沒有標題時代入 none）。前綴尾端的空白也算在前綴內，預覽中以 <span class="ws">␣</span> 表示，換行以 <span class="ws">↵</span> 表示。
+    </p>
+    <div class="table-wrap">
+      <table class="prefix-table">
+        <thead><tr><th style="width: 36px"></th><th style="width: 22%">名稱</th><th>查詢前綴</th><th>文件前綴</th><th style="width: 40px"></th></tr></thead>
+        <tbody id="e-pairs"></tbody>
+      </table>
+    </div>
+    <h3>預覽：實際送出的文字</h3>
+    <div id="e-preview"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. 資料集與評測設定</h2>
+    <div id="e-datasets"></div>
+    <div class="grid-2" style="margin-top: 16px">
+      <label class="field">
+        <span class="field-label">評測維度（選填）</span>
+        <input id="e-dims" type="text" placeholder="留空＝完整維度，例如 768,512,256">
+        <span class="field-help">由系統截取前 N 維並重新正規化後評測，同一份向量可以比較多個維度，不必重新呼叫 API。<span id="e-dim-chips"></span></span>
+      </label>
+      <label class="field">
+        <span class="field-label">快速試跑（選填）</span>
+        <input id="e-limit" type="number" min="1" placeholder="留空＝全部題目">
+        <span class="field-help">只跑前 N 題（文件庫仍完整），先確認設定正確。之後跑全部題目時，已算過的向量會直接沿用。</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button type="button" id="e-test">測試連線</button>
+      <button type="button" id="e-save">另存為自訂預設檔</button>
+      <span class="spacer"></span>
+      <span class="small muted" id="e-summary"></span>
+      <button type="button" class="primary" id="e-submit">開始評測</button>
+    </div>
+    <div id="e-test-result"></div>
+  </div>
+</section>
+
+<!-- ===================================================== Reranker -->
+<section id="tab-rerank" class="hidden">
+  <div class="card">
+    <h2>1. 第一階段檢索結果</h2>
+    <p class="small secondary">Reranker 會把第一階段（embedding 或 BM25）每題的前 N 名重新排序。</p>
+    <div class="grid-3">
+      <label class="field">
+        <span class="field-label">資料集</span>
+        <select id="r-dataset"></select>
+      </label>
+      <label class="field" style="grid-column: span 2">
+        <span class="field-label">第一階段結果</span>
+        <select id="r-source"></select>
+      </label>
+    </div>
+    <div class="grid-3" style="margin-top: 14px">
+      <label class="field">
+        <span class="field-label">候選數量 N</span>
+        <input id="r-candidates" type="number" min="1" max="100" value="50">
+        <span class="field-help">每題重新排序前 N 名（最多 100）。</span>
+      </label>
+      <label class="field" style="grid-column: span 2">
+        <span class="field-label">文件內容</span>
+        <span class="check"><input id="r-include-title" type="checkbox"> 在文件前面加上標題</span>
+        <span class="field-help">Reranker 不使用 embedding 的前綴，直接比較「問題」與「原始文件」。</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. Reranker</h2>
+    <div class="grid-2">
+      <label class="field">
+        <span class="field-label">預設檔</span>
+        <select id="r-preset"></select>
+      </label>
+      <label class="field">
+        <span class="field-label">顯示名稱</span>
+        <input id="r-label" type="text" placeholder="留空＝模型名稱 ← 第一階段名稱">
+      </label>
+    </div>
+    <div id="r-preset-info"></div>
+    <div class="grid-2" style="margin-top: 14px">
+      <label class="field">
+        <span class="field-label">Reranker 類型</span>
+        <select id="r-type"></select>
+      </label>
+      <div class="field-help" id="r-type-desc" style="align-self: end"></div>
+    </div>
+    <div id="r-params" style="margin-top: 14px"></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button type="button" id="r-test">測試連線</button>
+      <button type="button" id="r-save">另存為自訂預設檔</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="r-submit">開始評測</button>
+    </div>
+    <div id="r-test-result"></div>
+  </div>
+</section>
+
+<!-- ===================================================== BM25 -->
+<section id="tab-bm25" class="hidden">
+  <div class="card">
+    <h2>BM25 基準</h2>
+    <p class="small secondary">以 jieba 斷詞的 BM25（計分方式與 rank_bm25 的 BM25Okapi 相同），作為 embedding 模型的比較基準，也可以當 Reranker 的第一階段。</p>
+    <div id="b-datasets"></div>
+    <div class="grid-3" style="margin-top: 16px">
+      <label class="field"><span class="field-label">k1</span><input id="b-k1" type="number" step="any" value="1.5"></label>
+      <label class="field"><span class="field-label">b</span><input id="b-b" type="number" step="any" value="0.75"></label>
+      <label class="field"><span class="field-label">快速試跑（選填）</span><input id="b-limit" type="number" min="1" placeholder="留空＝全部題目"></label>
+    </div>
+    <div class="row" style="margin-top: 16px">
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="b-submit">開始評測</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/new_run.js') }}?v={{ version }}"></script>
+{% endblock %}

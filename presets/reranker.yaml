@@ -1,0 +1,133 @@
+# Reranker 預設檔（二階段評測：先用 embedding / BM25 取前 N 名，再由 reranker 重新排序）
+#
+# 欄位說明：
+#   reranker         rerank_api（/v1/rerank 通用格式）、llm_listwise（LLM 排序）、
+#                    cross_encoder、flag_reranker、qwen3_reranker（本地）
+#   params           reranker 參數
+#   provider_params  切換成其他 reranker 類型時套用的參數
+#   candidates       預設候選數量（第一階段取前幾名）
+
+presets:
+  # ---------------------------------------------------------------- API
+  - id: local-rerank-api
+    name: 自訂：任何 /v1/rerank 服務（vLLM、Infinity 等）
+    reranker: rerank_api
+    params:
+      base_url: http://localhost:8000/v1
+      model: ""
+
+  - id: tei-rerank
+    name: 自訂：Hugging Face TEI /rerank
+    reranker: rerank_api
+    params:
+      base_url: http://localhost:8080
+      model: tei
+      api_format: tei
+
+  - id: cohere-rerank-v3.5
+    name: Cohere：rerank-v3.5
+    reranker: rerank_api
+    params:
+      base_url: https://api.cohere.com/v2
+      model: rerank-v3.5
+      api_key_env: COHERE_API_KEY
+      concurrency: 2
+    candidates: 100
+
+  - id: voyage-rerank-1
+    name: Voyage：rerank-1
+    reranker: rerank_api
+    params:
+      base_url: https://api.voyageai.com/v1
+      model: rerank-1
+      api_key_env: VOYAGE_API_KEY
+      concurrency: 2
+    candidates: 100
+
+  - id: voyage-rerank-lite-1
+    name: Voyage：rerank-lite-1
+    reranker: rerank_api
+    params:
+      base_url: https://api.voyageai.com/v1
+      model: rerank-lite-1
+      api_key_env: VOYAGE_API_KEY
+      concurrency: 2
+    candidates: 100
+
+  - id: jina-reranker-v2-base-multilingual
+    name: Jina：jina-reranker-v2-base-multilingual
+    reranker: rerank_api
+    params:
+      base_url: https://api.jina.ai/v1
+      model: jina-reranker-v2-base-multilingual
+      api_key_env: JINA_API_KEY
+      concurrency: 2
+
+  - id: rankgpt-gpt-4o-mini
+    name: LLM 排序：gpt-4o-mini（RankGPT）
+    description: 一次把全部候選交給 LLM 排序（等同舊版 reranker-gpt.py）。候選 50 筆時 DRCD 約需 13 美元。
+    reranker: llm_listwise
+    params:
+      base_url: https://api.openai.com/v1
+      model: gpt-4o-mini
+      api_key_env: OPENAI_API_KEY
+      window_size: 0
+    notes:
+      - 成本約與「候選數 × 段落長度 × 題數」成正比，建議先用「快速試跑」的檢索結果測試。
+
+  # ---------------------------------------------------------------- 本地
+  - id: bge-reranker-v2-m3
+    name: BAAI：BAAI/bge-reranker-v2-m3
+    reranker: flag_reranker
+    params:
+      model: BAAI/bge-reranker-v2-m3
+    provider_params:
+      cross_encoder:
+        model: BAAI/bge-reranker-v2-m3
+      rerank_api:
+        base_url: http://localhost:8000/v1
+        model: BAAI/bge-reranker-v2-m3
+
+  - id: bge-reranker-large
+    name: BAAI：BAAI/bge-reranker-large
+    reranker: flag_reranker
+    params:
+      model: BAAI/bge-reranker-large
+
+  - id: bge-reranker-base
+    name: BAAI：BAAI/bge-reranker-base
+    reranker: flag_reranker
+    params:
+      model: BAAI/bge-reranker-base
+
+  - id: bge-reranker-v2-gemma
+    name: BAAI：BAAI/bge-reranker-v2-gemma（LLM 型）
+    reranker: flag_reranker
+    params:
+      model: BAAI/bge-reranker-v2-gemma
+      reranker_class: FlagLLMReranker
+
+  - id: bge-reranker-v2-minicpm-layerwise
+    name: BAAI：BAAI/bge-reranker-v2-minicpm-layerwise（LLM 型）
+    reranker: flag_reranker
+    params:
+      model: BAAI/bge-reranker-v2-minicpm-layerwise
+      reranker_class: LayerWiseFlagLLMReranker
+      score_kwargs: {cutoff_layers: [28]}
+
+  - id: ms-marco-minilm-l-6-v2
+    name: CrossEncoder：cross-encoder/ms-marco-MiniLM-L-6-v2
+    description: 英文 MS MARCO 訓練的小模型，可當作對照組。
+    reranker: cross_encoder
+    params:
+      model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+  - id: qwen3-reranker-0.6b
+    name: Qwen：Qwen/Qwen3-Reranker-0.6B
+    reranker: qwen3_reranker
+    params:
+      model: Qwen/Qwen3-Reranker-0.6B
+    provider_params:
+      rerank_api:
+        base_url: http://localhost:8000/v1
+        model: Qwen/Qwen3-Reranker-0.6B

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · 中文 Embedding 評測</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v={{ version }}">
+  <script src="{{ url_for('static', filename='js/common.js') }}?v={{ version }}"></script>
+  <script src="{{ url_for('static', filename='js/charts.js') }}?v={{ version }}"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">中文 Embedding 評測<span>v{{ version }}</span></a>
+      <nav class="nav">
+        {% for name, path, label in pages %}
+          <a href="{{ path }}" class="{{ 'active' if page == name or (name == 'leaderboard' and page in ('result', 'queries')) else '' }}">{{ label }}{% if name == 'jobs' %}<span id="jobs-badge" class="badge hidden"></span>{% endif %}</a>
+        {% endfor %}
+      </nav>
+      <button id="theme-toggle" class="theme-toggle" type="button">主題：自動</button>
+    </div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <div id="toasts"></div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
