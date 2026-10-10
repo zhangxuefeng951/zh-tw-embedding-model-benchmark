@@ -1,0 +1,207 @@
+**建議先用 Sentence Transformers（向量模型套件）、文字模式、完整 768 維，以及 `bfloat16` 或 `float32` 建立中文搜尋基準，再考慮縮小向量、量化或改成 API 服務。**最需要避免的是：**精度選錯、查詢與文件格式用錯，以及不同模型的向量混用。**[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/inference-embeddinggemma-with-sentence-transformers)
+
+# EmbeddingGemma 2 使用注意事項
+
+下文以 `google/embeddinggemma-2` 為準；套件版本、推論工具及託管 API 的支援狀態，部署前仍需再次確認。
+
+## 1. 先確認模型與套件版本
+
+**EmbeddingGemma 2 與 Gemini Embedding 2 是不同模型。**前者可以下載權重自行執行；後者是透過 Gemini API 使用的另一個模型，不能把它當成前者的雲端版本。[Hugging Face](https://huggingface.co/google/embeddinggemma-2)
+
+目前需要注意的套件版本：
+
+| 套件 | 注意事項 |
+|---|---|
+| **Sentence Transformers** | 官方模型設定要求 **6.1.0 或以上**。舊版對混合圖片、文字等輸入的處理可能不符合模型需求。 |
+| **Transformers** | 正式版 **5.19.0** 才加入 `embedding_gemma2` 模組，不能拿較舊正式版直接載入。 |
+| **vLLM** | 要確認安裝版本包含 EmbeddingGemma 2 的支援與後續修正；不能只看到「vLLM 支援」就認為任何正式版都能跑。 |
+
+上述版本條件可由模型設定與 vLLM 官方整合紀錄確認。[Hugging Face](https://huggingface.co/google/embeddinggemma-2/blob/main/config_sentence_transformers.json)
+
+**我的建議：**測通後，固定套件版本與模型的下載版本，避免正式服務每次重新安裝都取得不同組合。
+
+## 2. 不要使用 `float16`
+
+這是官方明確警告，不只是效能上的偏好。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
+
+| 計算精度 | 建議 |
+|---|---|
+| **`bfloat16`** | 硬體原生支援時優先使用。 |
+| **`float32`** | 不支援 `bfloat16` 時使用，也是較保守的基準。 |
+| **`float16`／FP16** | **不要使用。**可能產生 `NaN`（無效數值），也可能不報錯卻降低向量品質。 |
+
+**`bfloat16` 和 `float16` 雖然都是 16 位元，但能表示的數值範圍不同，不能互換。**尤其不要直接照搬其他模型「改成 FP16 省記憶體」的教學。[huggingface.co](https://huggingface.co/google/embeddinggemma-2)
+
+## 3. 查詢與文件要使用不同的輸入格式
+
+對文件搜尋而言，兩端的設定不同：
+
+| 要轉成向量的內容 | Sentence Transformers 設定 |
+|---|---|
+| 使用者的搜尋問題 | `prompt_name="SearchQuery"` |
+| 沒有標題的文件內容 | `prompt_name="Document"` |
+| 比較兩句話的語意是否相近 | 兩句都使用 `prompt_name="SentenceSimilarity"` |
+
+**目前官方設定的 `default_prompt_name` 是 `null`，所以不能假設單純呼叫 `model.encode(text)` 就會自動套用搜尋前綴。**[huggingface.co](https://huggingface.co/google/embeddinggemma-2/blob/main/config_sentence_transformers.json)
+
+有標題的文件，官方建議手動組成：
+
+```text
+title: 宿舍申請辦法 | text: 學生應於公告期限內完成宿舍申請……
+```
+
+需要特別注意：
+
+- **不要重複加前綴。**已經手動組好完整格式，就不要再讓套件加一次 `Document` 前綴。
+- **中文內容仍保留官方英文前綴格式**，不要自行把 `title:`、`text:` 等標記翻譯成中文。
+- **不要沿用 E5 的 `query:`／`passage:` 格式。**EmbeddingGemma 2 有自己的任務格式。[Hugging Face](https://huggingface.co/google/embeddinggemma-2)
+
+## 4. 只處理文字，就不要載入全部模組
+
+EmbeddingGemma 2 可以選擇不載入用不到的圖片、音訊模組：
+
+| 使用內容 | 約略參數量 |
+|---|---:|
+| 文字與程式碼 | **270M，約 2.7 億** |
+| 文字＋圖片／影片 | **440M，約 4.4 億** |
+| 文字＋音訊 | **570M，約 5.7 億** |
+| 全部內容類型 | **740M，約 7.4 億** |
+
+使用 Sentence Transformers 時，文字模式的設定是：
+
+```python
+config_kwargs={"vision_config": None, "audio_config": None}
+```
+
+**只傳文字進去，不等於已經只載入文字模組。**要在載入時明確關閉不用的模組，才會得到相應的記憶體節省。[Google 開發者部落格](https://developers.googleblog.com/embeddinggemma-2-the-developer-guide/)
+
+另外，**參數量不是整個程式的記憶體用量**。我的建議是用實際文件長度與單次處理筆數，量測峰值記憶體；不要只看模型檔案大小來決定伺服器規格。
+
+## 5. 縮小向量後，要重新正規化
+
+官方主要提供 **768、512、256、128 維**等選擇。這裡的「維度」，就是每筆內容用多少個數字表示。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
+
+**我的起始建議是先用 768 維。**確定搜尋品質後，再測試 512 或 256 維；不要一開始就為了省空間直接降到最低。
+
+縮小時，建議同時設定：
+
+```python
+truncate_dim=256
+normalize_embeddings=True
+```
+
+正規化就是把向量調整成長度為 1。**截取前面幾個數字後，原本的長度不會自動維持為 1，因此需要重新處理。**這在用內積計算搜尋分數時尤其重要；正規化後，內積才可直接當成餘弦相似度使用。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/inference-embeddinggemma-with-sentence-transformers)
+
+還要記住：
+
+**查詢與文件必須使用相同維度。縮小輸出向量主要是在節省向量儲存與搜尋成本，不等於把模型本身縮小。**128 維對部分多媒體任務的品質影響也較大，需要另外驗證。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
+
+## 6. 8,192 tokens 不代表適合整份文件直接塞入
+
+模型的輸入上限是 **8,192 tokens（文字切分單位）**，不是 8,192 個中文字；文字、圖片、影片及音訊也共用這個輸入額度。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
+
+**我的文件處理建議：**
+
+- 依章節、段落或主題切分，保留標題與來源。
+- 用模型實際的文字切分器計算長度，並替任務前綴、標題及特殊標記預留空間。
+- 明確決定超長內容要切分、拒絕，還是截斷，並記錄是否發生截斷。
+
+**「放得下」和「搜尋效果最好」是兩回事。**不要只測模型能不能處理長文件，也要測問題能否找回文件中的正確段落。
+
+## 7. 不要混用 E5、第一代或其他模型產生的向量
+
+這點對你前面比較 `multilingual-e5-large` 特別重要：
+
+> **不能用 E5 建立文件向量，再用 EmbeddingGemma 2 產生查詢向量來搜尋。**
+
+即使兩個模型剛好輸出相同維度，也不代表它們的數字具有相同意義。從 E5 換成 EmbeddingGemma 2，應重新產生文件向量，並建立對應索引。[Qdrant](https://qdrant.tech/articles/what-is-a-vector-database/?utm_source=chatgpt.com)
+
+建議為每個索引記錄：**模型與版本、文件前綴、切分方式、向量維度、正規化設定，以及使用的推論工具。**
+
+但有兩種情況要分開看：
+
+**只縮小同一模型的向量：**若保留了完整 768 維向量，可以從既有向量截取並重新正規化，再建立較小維度的索引，不一定要重新跑模型。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/inference-embeddinggemma-with-sentence-transformers)
+
+**只更換推論工具：**我的建議是先比對同一批資料的向量與搜尋排序，不要直接假設一定相同，也不必在尚未比較前就認定全部需要重建。
+
+## 8. API 能呼叫，不代表設定已經正確
+
+**自行部署 API 與使用現成雲端 API 是兩回事。**Google 的 LiteRT-LM（輕量推論工具）提供 `/v1/embeddings` 介面，但模型仍需要先下載並匯入；執行 `serve` 不會自動準備好 EmbeddingGemma 2。[Google for Developers](https://developers.google.com/edge/litert-lm/cli/openai_server)
+
+部署方式的注意事項：
+
+| 方式 | 需要注意 |
+|---|---|
+| **Sentence Transformers** | 是 Python 套件；其他程式要透過 HTTP 呼叫時，需要另加服務介面。 |
+| **LiteRT-LM** | 使用對應的 `.litertlm` 模型，確認模型名稱、載入模組與硬體後端。 |
+| **vLLM** | 確認版本包含新模型支援，且 Transformers 依賴相容。 |
+| **Ollama** | 維護者於 **2026 年 10 月 6 日**表示，當時這個模型尚未支援 Windows／Linux；不要只看模型庫已上架就直接判定可用。 |
+
+上述情況分別來自官方文件與維護紀錄。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/inference-embeddinggemma-with-sentence-transformers)
+
+**我的 API 驗收重點是：**服務是否正確處理查詢／文件前綴、是否有重複加前綴、回傳維度是否正確，以及長輸入是否被截斷。`prompt_name` 是套件參數，不能假設每個 HTTP 服務都有同名欄位。
+
+另外，Hugging Face 官方模型頁目前仍顯示沒有列出的託管推論供應商；**這不能推論成全世界一定沒有服務，只能說目前沒有從該頁確認到。**[huggingface.co](https://huggingface.co/google/embeddinggemma-2)
+
+## 9. 中文品質要用自己的資料測，不要只看多語言總分
+
+官方有多語言整體評測，但也提醒不同語言的表現不一定相同。**多語言平均分數不能直接當成繁體中文、台灣用語或你自己的文件搜尋成績。**[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
+
+我的建議是準備一批實際問題，人工標出正確文件，至少涵蓋：
+
+- **繁體中文與台灣用語**，例如「統編」「宿舍」「選課」。
+- **中英文混合與精確字串**，例如產品型號、錯誤碼、函式名稱。
+- **容易混淆的內容**，例如「可以申請／不能申請」「去年規定／今年規定」。
+
+比較「前五筆是否找到正確文件」與「正確文件排第幾」，會比只看幾個相似度數字更有參考價值。
+
+若第一階段能找到相關文件，但排序不理想，可以另測 **reranker（重新排序模型）**；它會重新檢查問題與候選文件的配對，而不是只依向量距離排序。[Sbert](https://www.sbert.net/examples/sentence_transformer/applications/retrieve_rerank/README.html)
+
+## 10. 有圖片、音訊、影片時，要額外檢查前處理
+
+官方提供的預設包含：音訊使用 **16 kHz、單聲道**；影片預設以 **每秒一張畫面**取樣，且可以調整。所有內容仍共用輸入長度額度。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
+
+**建議：**影片搜尋要測試取樣是否會漏掉重要瞬間；圖片文件要測試小字、表格及解析度的影響。也不要把「同一筆輸入含多種媒體，產生一個向量」和「多筆資料各自产生向量」混為一談。官方多媒體介面支援這些不同輸入方式，但結構需要正確。[Google AI for Developers](https://ai.google.dev/gemma/docs/embeddinggemma/multimodal-embeddinggemma-with-sentence-transformers)
+
+## 11. 上線前，檢查數值、權限與網路設定
+
+**我的最低驗收清單是：**
+
+| 檢查項目 | 應確認的內容 |
+|---|---|
+| 向量數值 | 沒有 `NaN`、無限大或非預期的全零向量。 |
+| 輸出結構 | 每筆輸入對應一筆結果，維度符合設定。 |
+| 正規化 | 設定正規化後，向量長度應接近 1。 |
+| 搜尋品質 | 使用固定中文測試集，比對部署前後的排序。 |
+| 失敗處理 | 空字串、超長輸入、損壞媒體檔案有明確處理方式。 |
+
+安全方面，**不要因為文件變成向量，就把它視為已匿名或不需要保護的資料。**文件權限應保留到搜尋階段；不能讓使用者透過搜尋取得原本無權讀取的內容。[OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/cheatsheets/RAG_Security_Cheat_Sheet.html?utm_source=chatgpt.com)
+
+**LiteRT-LM 還有一個容易忽略的設定：官方文件列出的預設監聽位址是 `0.0.0.0`，不是只限本機。**只供自己電腦使用時，應明確設定：
+
+```text
+--host 127.0.0.1
+```
+
+要對外提供服務，再另外配置身分驗證、加密連線與流量限制。[Google for Developers](https://developers.google.com/edge/litert-lm/cli/openai_server)
+
+---
+
+## 建議的起始設定
+
+以下是我會用來建立基準的組合，**不是已在你的硬體上測出的最佳配置**：
+
+```text
+模型：google/embeddinggemma-2
+推論套件：Sentence Transformers，相容且固定的版本
+載入內容：只載入文字模組
+計算精度：支援時 bfloat16，否則 float32
+向量維度：768
+查詢格式：SearchQuery
+文件格式：Document；有標題則手動使用官方格式
+向量正規化：開啟
+文件處理：按段落切分，保留來源與標題
+驗收方式：固定的繁體中文問題與正確文件配對
+```
+
+**先把這組設定的搜尋品質確認好，再一次只改一項：維度、量化、批量或推論工具。這樣結果變差時，才知道是哪個改動造成的。**
