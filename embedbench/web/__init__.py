@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask import Flask, render_template
 
 from embedbench import __version__
+from embedbench.config import export_library_env
 from embedbench.jobs import JobManager
 
 PAGES = [
@@ -18,6 +19,7 @@ PAGES = [
 
 
 def create_app(start_jobs: bool = True) -> Flask:
+    export_library_env()
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 上傳資料集最大 1 GB
     app.config["JSON_AS_ASCII"] = False

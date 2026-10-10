@@ -47,14 +47,23 @@ uv sync --extra local        # 需要由本系統直接載入本地模型時才�
 uv run embedbench serve      # 開啟 http://127.0.0.1:5000
 ```
 
-API Key 放在專案根目錄的 `.env`（已在 `.gitignore`）或系統環境變數，Web UI 只填「環境變數名稱」：
+API Key 放在專案根目錄的 `.env`（已在 `.gitignore`）或系統環境變數，Web UI 只填「環境變數名稱」。從範本複製後，只填會用到的項目：
 
 ```bash
-OPENAI_API_KEY=sk-...
-COHERE_API_KEY=...
-VOYAGE_API_KEY=...
-GEMINI_API_KEY=...
+cp .env.example .env
 ```
+
+| 項目 | 用途 |
+|---|---|
+| `OPENAI_API_KEY`、`COHERE_API_KEY`、`VOYAGE_API_KEY`、`GEMINI_API_KEY`、`MISTRAL_API_KEY`、`JINA_API_KEY` | 各家雲端 API |
+| `GCP_PROJECT_ID`、`GCP_ACCESS_TOKEN` | Vertex AI |
+| `LOCAL_API_KEY` | 自己啟動的服務設定了 `--api-key` 時使用（名稱可以自訂） |
+| `HF_TOKEN`、`HF_ENDPOINT`、`HF_HOME` | 本地載入需要授權的模型（例如 `google/embeddinggemma-2`）、鏡像站、下載快取位置 |
+| `EMBEDBENCH_DATA_DIR`、`EMBEDBENCH_PRESETS_DIR` | 資料目錄、預設檔資料夾 |
+
+- 只評測自己啟動的本地 API 時，通常什麼都不用填
+- 系統環境變數的優先順序高於 `.env`
+- API Key 改了立即生效；其他設定修改後請重新啟動
 
 ### 1. 自行啟動模型 API 服務
 

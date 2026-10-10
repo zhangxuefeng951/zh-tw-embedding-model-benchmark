@@ -435,6 +435,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    from embedbench.config import export_library_env
+
+    export_library_env()
     args = build_parser().parse_args(argv)
     try:
         args.func(args)
