@@ -30,7 +30,8 @@
   - 也可以勾選多個維度，由系統截取前 N 維後重新正規化再評測，不必重新呼叫 API
 - **Reranker 二階段評測**：`/v1/rerank`（Jina、Cohere、Voyage、vLLM、TEI）、LLM 列表式排序（RankGPT）、本地 CrossEncoder／BGE／Qwen3-Reranker
 - **BM25 基準**：jieba 斷詞，計分公式與舊版的 `rank_bm25` 完全相同
-- **報告**：排行榜、單一結果頁、K 值曲線、逐題錯誤分析、向量健康檢查（NaN／全零／長度），可匯出 CSV、JSON、Markdown
+- **報告**：排行榜、單一結果頁、K 值曲線、逐題錯誤分析、向量健康檢查（NaN／全零／長度／自動截短筆數），可匯出 CSV、JSON、Markdown
+- **超過模型長度上限**：文字太長被 API 拒絕時，自動從尾端截短後重送，並記錄截短筆數（見「常見問題」）
 - **執行**
   - 背景任務佇列：預設一次跑 1 個任務，可以在設定改成 2 個以上
   - 進度條、可以取消
@@ -249,6 +250,21 @@ presets/            內建預設檔（YAML）
 tests/              pytest（含模擬 /v1/embeddings 的測試伺服器）
 data/               執行期資料（資料庫、資料集、向量快取、結果），不進 git
 ```
+
+## 常見問題
+
+**評測失敗：HTTP 400「maximum context length is 512 tokens」或「must have less than … tokens」**
+
+文件超過模型的輸入長度上限（例如 E5 系列是 512 tokens）。OpenAI 相容 provider 的參數「超過長度上限時」可以選擇兩種處理方式：
+
+- `auto`（預設）
+  - 系統拿不到模型的 tokenizer，所以等服務端回報「過長」後，才把那幾筆文字從尾端截短重送
+  - 會保留前綴與開頭，同一批的其他文字照常計算
+  - 效果與 sentence-transformers 在本地自動截斷相同（舊版腳本就是這樣）
+  - 截短的筆數會顯示在任務訊息、結果頁的「向量檢查」與排行榜
+- `error`：直接報錯停止
+
+「測試連線」也會送出資料集中最長的一篇文件，提早發現這個問題。
 
 ## 開發
 

@@ -340,6 +340,13 @@
     };
   }
 
+  function longestText(longest) {
+    if (!longest) return "";
+    if (longest.error) return `資料集最長的文件（${longest.chars} 字）超過模型長度上限。`;
+    if (longest.truncated) return `資料集最長的文件（${longest.chars} 字）超過長度上限，會自動截短為前 ${longest.kept_chars} 字。`;
+    return `資料集最長的文件（${longest.chars} 字）也能正常送出。`;
+  }
+
   async function testEmbedding() {
     const cfg = embeddingConfig();
     const box = $("#e-test-result");
@@ -370,7 +377,7 @@
       h(
         "div",
         {},
-        h("div", { class: "notice good", text: `連線成功（建立連線 / 載入模型 ${out.load_seconds} 秒）。` }),
+        h("div", { class: "notice good", text: `連線成功（建立連線 / 載入模型 ${out.load_seconds} 秒）。` + longestText(out.longest) }),
         out.warnings.length ? h("div", { class: "notice warn" }, h("ul", {}, out.warnings.map((w) => h("li", { text: w })))) : null,
         h(
           "div",

@@ -35,6 +35,8 @@ class MockState:
         self.requests: list[dict] = []
         self.fail_next = 0  # 前 N 個請求回 503（測試重試）
         self.dims = 256
+        self.max_tokens = None  # 模擬模型的輸入長度上限（以字元數當 token 數）
+        self.error_style = "litellm"  # litellm（經 LiteLLM 包裝的 vLLM 訊息）| tei
         self.lock = threading.Lock()
 
 
@@ -64,6 +66,23 @@ def make_handler(state: MockState):
                 if isinstance(inputs, str):
                     inputs = [inputs]
                 dims = int(body.get("dimensions") or state.dims)
+                too_long = [t for t in inputs if state.max_tokens and len(t) > state.max_tokens]
+                if too_long:
+                    n, limit = len(too_long[0]), state.max_tokens
+                    if state.error_style == "tei":
+                        msg = f"Input validation error: `inputs` must have less than {limit} tokens. Given: {n}"
+                        return self._send(413, {"error": msg, "error_type": "Validation"})
+                    inner = (
+                        f"This model's maximum context length is {limit} tokens. However, you requested 0 output "
+                        f"tokens and your prompt contains at least {n} input tokens, for a total of at least {n} "
+                        f"tokens. Please reduce the length of the input prompt or the number of requested output "
+                        f"tokens. (parameter=input_tokens, value={n})"
+                    )
+                    msg = (
+                        "litellm.ContextWindowExceededError: litellm.BadRequestError: ContextWindowExceededError: "
+                        "OpenAIException - Error code: 400 - {'error': {'message': \"" + inner + "\", 'type': 'BadRequestError'}}"
+                    )
+                    return self._send(400, {"error": {"message": msg, "type": None, "param": None, "code": "400"}})
                 with state.lock:
                     state.embedding_inputs.extend(inputs)
                 data = [

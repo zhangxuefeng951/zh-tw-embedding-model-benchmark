@@ -225,6 +225,8 @@
       const chips = [h("span", { class: "chip" + (r.kind === "embedding" ? "" : " accent"), text: r.kind_label })];
       if (r.query_limit) chips.push(h("span", { class: "chip warn", text: `試跑 ${r.num_queries} 題` }));
       if (r.truncated) chips.push(h("span", { class: "chip", text: "截取維度" }));
+      const cut = r.truncated_texts ? (r.truncated_texts.document || 0) + (r.truncated_texts.query || 0) : 0;
+      if (cut) chips.push(h("span", { class: "chip warn", title: "超過模型輸入長度上限、自動從尾端截短的文字筆數", text: `截短 ${cut} 筆` }));
       tbody.appendChild(
         h(
           "tr",

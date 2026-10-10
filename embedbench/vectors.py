@@ -52,12 +52,30 @@ class ChunkStore:
             done = max(done, end)
         return done
 
-    def append(self, start: int, array: np.ndarray) -> None:
+    def append(self, start: int, array: np.ndarray, info: dict | None = None) -> None:
+        """寫入第 start 筆起的一段；info（例如被截短的索引）存成同名的 .json。"""
         end = start + len(array)
         final = self.directory / f"{start:09d}-{end:09d}.npy"
+        if info:
+            info_tmp = self.directory / f".tmp-{start:09d}-{os.getpid()}.json"
+            with open(info_tmp, "w", encoding="utf-8") as f:
+                json.dump(info, f, ensure_ascii=False)
+            os.replace(info_tmp, final.with_suffix(".json"))
         tmp = self.directory / f".tmp-{start:09d}-{os.getpid()}.npy"
         np.save(tmp, array)
         os.replace(tmp, final)
+
+    def truncated(self, n: int) -> list[int]:
+        """前 n 筆中，計算向量時被自動截短的索引。"""
+        out = set()
+        for start, _end, path in self._chunks():
+            info_path = path.with_suffix(".json")
+            if start >= n or not info_path.exists():
+                continue
+            with open(info_path, encoding="utf-8") as f:
+                info = json.load(f)
+            out.update(start + i for i in info.get("truncated", []) if start + i < n)
+        return sorted(out)
 
     def load(self, n: int) -> np.ndarray:
         parts, done = [], 0

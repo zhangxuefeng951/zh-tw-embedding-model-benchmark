@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
@@ -26,8 +27,22 @@ class EmbeddingProvider:
         if not self.p.get("model") and self.requires_model:
             raise ValueError("請填寫模型名稱")
         self.check_cancel: Callable[[], None] | None = None
+        self._truncations: list[dict] = []
+        self._trunc_lock = threading.Lock()
 
     requires_model = True
+
+    def record_truncation(self, role: str, original: str, kept: str) -> None:
+        with self._trunc_lock:
+            self._truncations.append(
+                {"role": role, "text": original, "original_chars": len(original), "kept_chars": len(kept)}
+            )
+
+    def pop_truncations(self) -> list[dict]:
+        """取出並清空目前為止被自動截短的紀錄。"""
+        with self._trunc_lock:
+            out, self._truncations = self._truncations, []
+        return out
 
     @classmethod
     def describe(cls) -> dict:

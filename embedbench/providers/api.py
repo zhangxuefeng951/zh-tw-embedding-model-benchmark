@@ -23,6 +23,7 @@ from embedbench.params import (
     timeout_param,
 )
 from embedbench.providers.base import EmbeddingProvider, parse_embedding_list
+from embedbench.truncation import embed_with_truncation
 
 
 def join_url(base: str, endpoint: str) -> str:
@@ -71,18 +72,40 @@ class OpenAICompatProvider(_ApiProvider):
         dimensions_param("dimensions"),
         batch_size_param(32),
         concurrency_param(4),
+        Param(
+            "truncate",
+            "超過長度上限時",
+            "select",
+            "auto",
+            "auto＝服務端回報文字過長時，系統自動從尾端截短後重送（保留前綴與開頭，等同 sentence-transformers "
+            "的預設截斷），並記錄截斷筆數；error＝直接報錯停止",
+            options=["auto", "error"],
+            affects_output=False,  # 沒超過上限的文字向量不受影響；截斷筆數另外記錄
+        ),
         timeout_param(),
         retries_param(),
         *extra_params(),
     ]
 
     def embed_batch(self, texts: list[str], role: str) -> np.ndarray:
+        if self.p.get("truncate") == "error":
+            return self._request(texts, role)
+        return embed_with_truncation(
+            texts,
+            lambda batch: self._request(batch, role),
+            lambda original, kept: self.record_truncation(role, original, kept),
+        )
+
+    def _request(self, texts: list[str], role: str) -> np.ndarray:
         body = {"model": self.p["model"], "input": texts}
         if self.p.get("dimensions"):
             body["dimensions"] = int(self.p["dimensions"])
         body.update(self.role_extra(role))
         data = self.post(join_url(self.p["base_url"], "embeddings"), body, bearer(self.api_key()))
-        return parse_embedding_list(data.get("data") if isinstance(data, dict) else data, "/v1/embeddings")
+        out = parse_embedding_list(data.get("data") if isinstance(data, dict) else data, "/v1/embeddings")
+        if len(out) != len(texts):
+            raise RuntimeError(f"/v1/embeddings 回傳的向量數量不符：送出 {len(texts)} 筆，收到 {len(out)} 筆")
+        return out
 
 
 class CohereProvider(_ApiProvider):

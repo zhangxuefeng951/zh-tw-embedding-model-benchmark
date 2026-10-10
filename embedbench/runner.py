@@ -18,6 +18,7 @@ from embedbench import prefixes
 from embedbench.bm25 import cached_index, tokenize
 from embedbench.datasets import dataset_exists, get_dataset, prepare_dataset
 from embedbench.db import Database, get_db, now_iso
+from embedbench.http import ApiError
 from embedbench.providers import create_provider, normalized_params, provider_signature
 from embedbench.ranking import (
     TOP_T,
@@ -31,6 +32,7 @@ from embedbench.ranking import (
 from embedbench.rerankers import create_reranker
 from embedbench.rerankers import normalized_params as reranker_params
 from embedbench.rerankers import signature as reranker_signature
+from embedbench.truncation import is_context_error
 from embedbench.vectors import store_for, vector_health
 
 STORED_KS = [1, 3, 5, 10, 20, 50, 100]
@@ -225,6 +227,7 @@ def run_embedding(cfg: dict, ctx: JobContext) -> list[str]:
 
             vectors: dict[tuple[str, str], np.ndarray] = {}
             timing: dict[tuple[str, str], dict] = {}
+            truncated: dict[tuple[str, str], int] = {}
             for role, template in needed:
                 if role == "document":
                     texts = [prefixes.render(template, d.text, d.title) for d in ds.documents]
@@ -256,9 +259,18 @@ def run_embedding(cfg: dict, ctx: JobContext) -> list[str]:
                     for start in range(cached, n, chunk):
                         end = min(start + chunk, n)
                         arr = provider.embed(texts[start:end], role, on_progress=on_progress, check_cancel=ctx.check_cancel)
-                        store.append(start, arr)
+                        originals = {t["text"] for t in provider.pop_truncations()}
+                        local = [i for i, t in enumerate(texts[start:end]) if t in originals]
+                        store.append(start, arr, {"truncated": local} if local else None)
                 vectors[(role, template)] = store.load(n)
                 timing[(role, template)] = {"seconds": round(time.time() - t0, 2), "cached": min(cached, n), "total": n}
+                truncated[(role, template)] = len(store.truncated(n))
+                if truncated[(role, template)]:
+                    name = "文件" if role == "document" else "查詢"
+                    ctx.log(
+                        f"[{ds.name}] {name}（前綴：{prefixes.display(template)}）有 {truncated[(role, template)]} 筆"
+                        "超過模型長度上限，已自動從尾端截短（保留前綴與開頭）"
+                    )
 
             for pair in cfg["prefix_pairs"]:
                 qv = vectors[("query", pair["query"])]
@@ -266,7 +278,10 @@ def run_embedding(cfg: dict, ctx: JobContext) -> list[str]:
                 if qv.shape[1] != dv.shape[1]:
                     raise RuntimeError(f"查詢向量 {qv.shape[1]} 維與文件向量 {dv.shape[1]} 維不一致")
                 full = int(dv.shape[1])
-                health = {"query": vector_health(qv), "document": vector_health(dv)}
+                health = {
+                    "query": {**vector_health(qv), "truncated": truncated[("query", pair["query"])]},
+                    "document": {**vector_health(dv), "truncated": truncated[("document", pair["document"])]},
+                }
                 for side, h in health.items():
                     if h.get("nan_rows") or h.get("inf_rows"):
                         ctx.log(f"警告：{pair['label']} 的{side}向量有 NaN / 無限大（{h}）")
@@ -587,9 +602,46 @@ def probe_embedding(provider: str, params: dict, pairs: list[dict], dataset_key:
                     "elapsed_ms": round(elapsed * 1000),
                 }
             )
+        longest = _probe_longest_document(p, pairs[0], dataset_key, warnings)
     finally:
         p.close()
-    return {"ok": True, "load_seconds": round(load_seconds, 2), "items": items, "warnings": warnings}
+    return {"ok": True, "load_seconds": round(load_seconds, 2), "items": items, "warnings": warnings, "longest": longest}
+
+
+def _probe_longest_document(p, pair: dict, dataset_key: str | None, warnings: list[str]) -> dict | None:
+    """送出資料集中最長的文件，提早發現「超過模型長度上限」的問題。"""
+    if not dataset_key:
+        return None
+    try:
+        ds = get_dataset(dataset_key, prepare=False)
+    except FileNotFoundError:
+        return None
+    if not ds.documents:
+        return None
+    template = pair.get("document")
+    doc = max(ds.documents, key=lambda d: len(prefixes.render(template, d.text, d.title)))
+    text = prefixes.render(template, doc.text, doc.title)
+    p.pop_truncations()
+    info = {"chars": len(text), "title": doc.title, "truncated": False, "kept_chars": len(text), "error": None}
+    try:
+        p.embed([text], "document")
+    except ApiError as e:
+        if not is_context_error(e):
+            raise
+        info["error"] = str(e)[:300]
+        warnings.append(
+            f"資料集中最長的文件（{len(text)} 字）超過模型長度上限，評測會失敗。"
+            "請把參數「超過長度上限時」設為 auto（自動截短）。"
+        )
+        return info
+    trunc = p.pop_truncations()
+    if trunc:
+        info.update(truncated=True, kept_chars=trunc[0]["kept_chars"])
+        warnings.append(
+            f"資料集中最長的文件（{len(text)} 字）超過模型長度上限，評測時會自動從尾端截短"
+            f"（這篇保留前 {trunc[0]['kept_chars']} 字）；被截短的筆數會記錄在結果中。"
+        )
+    return info
 
 
 def probe_reranker(reranker: str, params: dict, dataset_key: str | None = None) -> dict:

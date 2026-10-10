@@ -46,12 +46,22 @@
       ["norm_min", "長度最小"],
       ["norm_mean", "長度平均"],
       ["norm_max", "長度最大"],
+      ["truncated", "超過長度上限、自動截短"],
     ];
     const bad = sides.some(([, v]) => v.nan_rows || v.inf_rows || v.zero_rows);
+    const truncated = sides.map(([s, v]) => [s, v.truncated || 0]).filter(([, n]) => n > 0);
     return h(
       "div",
       {},
       bad ? h("div", { class: "notice bad", text: "有異常向量（NaN / 無限大 / 全零），結果可能不可信。若是 EmbeddingGemma，請確認沒有使用 float16。" }) : h("div", { class: "notice good", text: "沒有 NaN、無限大或全零向量。" }),
+      truncated.length
+        ? h("div", {
+            class: "notice warn",
+            text:
+              truncated.map(([s, n]) => `${s === "query" ? "查詢" : "文件"} ${n} 筆`).join("、") +
+              "超過模型的輸入長度上限，已自動從尾端截短後計算向量（保留前綴與開頭，與 sentence-transformers 的預設截斷方式相同）。",
+          })
+        : null,
       h(
         "table",
         {},

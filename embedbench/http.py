@@ -15,9 +15,10 @@ _local = threading.local()
 
 
 class ApiError(RuntimeError):
-    def __init__(self, message: str, status: int | None = None):
+    def __init__(self, message: str, status: int | None = None, body: str | None = None):
         super().__init__(message)
         self.status = status
+        self.body = body or ""
 
 
 def _session() -> requests.Session:
@@ -58,7 +59,7 @@ def post_json(
             _sleep(attempt, resp.headers.get("Retry-After"), check_cancel)
             attempt += 1
             continue
-        raise ApiError(f"{url} 回應 HTTP {resp.status_code}：{resp.text[:500]}", resp.status_code)
+        raise ApiError(f"{url} 回應 HTTP {resp.status_code}：{resp.text[:500]}", resp.status_code, resp.text)
 
 
 def _sleep(attempt: int, retry_after: str | None, check_cancel: Callable[[], None] | None) -> None:

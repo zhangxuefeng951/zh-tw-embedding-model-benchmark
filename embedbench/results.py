@@ -67,6 +67,8 @@ def clean(value):
 def summarize(result: dict, ks: list[int]) -> dict:
     m = metrics_for(result, ks)
     cfg = result.get("config") or {}
+    health = result.get("health") or {}
+    truncated = {side: (health.get(side) or {}).get("truncated") or 0 for side in ("query", "document")}
     return clean(
         {
             "id": result["id"],
@@ -81,8 +83,9 @@ def summarize(result: dict, ks: list[int]) -> dict:
             "query_prefix": result.get("query_prefix"),
             "document_prefix": result.get("document_prefix"),
             "dims": result.get("dims"),
-            "truncated": cfg.get("truncated", False),
+            "truncated": cfg.get("truncated", False),  # 是否截取向量維度
             "query_limit": cfg.get("query_limit"),
+            "truncated_texts": truncated,  # 超過輸入長度上限、自動截短的文字筆數
             "parent_result_id": result.get("parent_result_id"),
             "num_queries": result["num_queries"],
             "num_documents": result["num_documents"],
