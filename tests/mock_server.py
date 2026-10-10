@@ -36,7 +36,8 @@ class MockState:
         self.fail_next = 0  # 前 N 個請求回 503（測試重試）
         self.dims = 256
         self.max_tokens = None  # 模擬模型的輸入長度上限（以字元數當 token 數）
-        self.error_style = "litellm"  # litellm（經 LiteLLM 包裝的 vLLM 訊息）| tei
+        self.error_style = "litellm"  # litellm（經 LiteLLM 包裝的 vLLM 訊息）| tei | openai
+        self.chars_per_token = 1.0  # 模擬 tokenizer：每個 token 幾個字元
         self.lock = threading.Lock()
 
 
@@ -66,17 +67,25 @@ def make_handler(state: MockState):
                 if isinstance(inputs, str):
                     inputs = [inputs]
                 dims = int(body.get("dimensions") or state.dims)
-                too_long = [t for t in inputs if state.max_tokens and len(t) > state.max_tokens]
+                def tokens(t: str) -> int:
+                    return int(len(t) / state.chars_per_token + 0.999)
+
+                too_long = [t for t in inputs if state.max_tokens and tokens(t) > state.max_tokens]
                 if too_long:
-                    n, limit = len(too_long[0]), state.max_tokens
+                    n, limit = tokens(too_long[0]), state.max_tokens
                     if state.error_style == "tei":
                         msg = f"Input validation error: `inputs` must have less than {limit} tokens. Given: {n}"
                         return self._send(413, {"error": msg, "error_type": "Validation"})
+                    if state.error_style == "openai":
+                        msg = f"This model's maximum context length is {limit} tokens, however you requested {n} tokens ({n} in your prompt; 0 for the completion)."
+                        return self._send(400, {"error": {"message": msg, "type": "invalid_request_error"}})
+                    # vLLM 只回報下限「at least 上限+1」，不是實際長度
+                    m = limit + 1
                     inner = (
                         f"This model's maximum context length is {limit} tokens. However, you requested 0 output "
-                        f"tokens and your prompt contains at least {n} input tokens, for a total of at least {n} "
+                        f"tokens and your prompt contains at least {m} input tokens, for a total of at least {m} "
                         f"tokens. Please reduce the length of the input prompt or the number of requested output "
-                        f"tokens. (parameter=input_tokens, value={n})"
+                        f"tokens. (parameter=input_tokens, value={m})"
                     )
                     msg = (
                         "litellm.ContextWindowExceededError: litellm.BadRequestError: ContextWindowExceededError: "

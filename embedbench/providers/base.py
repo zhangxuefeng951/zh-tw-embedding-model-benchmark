@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from embedbench.params import Param, coerce_params, output_signature
+from embedbench.truncation import TruncationState
 
 
 class EmbeddingProvider:
@@ -29,6 +30,7 @@ class EmbeddingProvider:
         self.check_cancel: Callable[[], None] | None = None
         self._truncations: list[dict] = []
         self._trunc_lock = threading.Lock()
+        self.truncation_state = TruncationState()
 
     requires_model = True
 

@@ -94,6 +94,7 @@ class OpenAICompatProvider(_ApiProvider):
             texts,
             lambda batch: self._request(batch, role),
             lambda original, kept: self.record_truncation(role, original, kept),
+            self.truncation_state,
         )
 
     def _request(self, texts: list[str], role: str) -> np.ndarray:

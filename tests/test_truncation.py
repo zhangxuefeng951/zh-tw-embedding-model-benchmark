@@ -9,7 +9,7 @@ from embedbench.jobs import run_job_sync
 from embedbench.providers import create_provider
 from embedbench.results import get_result, list_results
 from embedbench.runner import probe_embedding
-from embedbench.truncation import is_context_error, length_ratio
+from embedbench.truncation import is_context_error, length_ratio, parse_limits
 
 # 使用者實際遇到的錯誤（LiteLLM 轉發 vLLM）
 LITELLM_BODY = (
@@ -24,7 +24,9 @@ LITELLM_BODY = (
 def test_parse_context_errors():
     e = ApiError("x", 400, LITELLM_BODY)
     assert is_context_error(e)
-    assert length_ratio(e) == pytest.approx(512 / 513)
+    # vLLM 的「at least 513」只是下限，不能當成實際長度
+    assert parse_limits(e) == (512, None)
+    assert length_ratio(e) is None
     tei = ApiError("x", 413, '{"error":"Input validation error: `inputs` must have less than 512 tokens. Given: 1024"}')
     assert is_context_error(tei) and length_ratio(tei) == pytest.approx(0.5)
     openai = ApiError(
@@ -35,7 +37,7 @@ def test_parse_context_errors():
     assert not is_context_error(ApiError("x", 500, LITELLM_BODY))
 
 
-@pytest.mark.parametrize("style", ["litellm", "tei"])
+@pytest.mark.parametrize("style", ["litellm", "tei", "openai"])
 def test_auto_truncate_keeps_prefix_and_other_texts(mock_api, style):
     state, url = mock_api
     state.max_tokens, state.error_style = 40, style
@@ -55,6 +57,34 @@ def test_auto_truncate_keeps_prefix_and_other_texts(mock_api, style):
     # 其他文字照常計算
     for i, t in zip([0, 1, 3, 4, 5], texts[:2] + texts[3:]):
         assert np.allclose(vecs[i], fake_embedding(t), atol=1e-6)
+
+
+@pytest.mark.parametrize("chars_per_token", [1.0, 1.6])
+def test_truncate_much_longer_text_close_to_limit(mock_api, chars_per_token):
+    """使用者遇到的情況：vLLM 只回報「at least 513」，而文件長度是上限的好幾倍。"""
+    state, url = mock_api
+    state.max_tokens, state.chars_per_token = 512, chars_per_token
+    max_chars = int(512 * chars_per_token)
+    p = create_provider("openai", {"base_url": url, "model": "e5", "batch_size": 4, "concurrency": 1})
+    long_texts = [f"passage: 第{i}篇" + "很長的段落內容" * (150 + 20 * i) for i in range(12)]
+    vecs = p.embed(long_texts, "document")
+    assert vecs.shape == (12, 256)
+    trunc = p.pop_truncations()
+    assert len(trunc) == 12
+    for t in trunc:
+        assert t["kept_chars"] <= max_chars
+        assert t["kept_chars"] >= max_chars * 0.97  # 接近上限，不會截掉太多
+    # 學會「每個 token 幾個字元」之後，平均每篇只需要少量請求
+    assert len(state.requests) / 12 < 8
+
+
+def test_prefix_longer_than_limit_fails_cleanly(mock_api):
+    state, url = mock_api
+    state.max_tokens, state.chars_per_token = 1, 0.5  # 連 1 個字元（2 個 token）都超過上限
+    p = create_provider("openai", {"base_url": url, "model": "m", "concurrency": 1})
+    with pytest.raises(ApiError, match="截短後仍超過"):
+        p.embed(["任何文字"], "document")
+    assert len(state.requests) < 10
 
 
 def test_error_mode_raises(mock_api):
