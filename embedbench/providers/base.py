@@ -40,6 +40,10 @@ class EmbeddingProvider:
                 {"role": role, "text": original, "original_chars": len(original), "kept_chars": len(kept)}
             )
 
+    def pop_notices(self) -> list[str]:
+        """取出截斷相關的說明（使用哪個 tokenizer、偵測到的上限…），給任務訊息顯示。"""
+        return self.truncation_state.pop_notices()
+
     def pop_truncations(self) -> list[dict]:
         """取出並清空目前為止被自動截短的紀錄。"""
         with self._trunc_lock:

@@ -2035,6 +2035,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "requests" },
     { name = "scipy" },
+    { name = "tokenizers" },
 ]
 
 [package.optional-dependencies]
@@ -2065,6 +2066,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32" },
     { name = "scipy", specifier = ">=1.14" },
     { name = "sentence-transformers", marker = "extra == 'local'", specifier = ">=6.1.0" },
+    { name = "tokenizers", specifier = ">=0.21" },
     { name = "torch", marker = "extra == 'local'", specifier = ">=2.2" },
     { name = "transformers", marker = "extra == 'local'", specifier = ">=5.19.0" },
 ]

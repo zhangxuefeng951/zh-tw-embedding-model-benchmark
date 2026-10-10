@@ -23,7 +23,7 @@ from embedbench.params import (
     timeout_param,
 )
 from embedbench.providers.base import EmbeddingProvider, parse_embedding_list
-from embedbench.truncation import embed_with_truncation
+from embedbench.truncation import TruncationState, embed_with_truncation
 
 
 def join_url(base: str, endpoint: str) -> str:
@@ -77,15 +77,43 @@ class OpenAICompatProvider(_ApiProvider):
             "超過長度上限時",
             "select",
             "auto",
-            "auto＝服務端回報文字過長時，系統自動從尾端截短後重送（保留前綴與開頭，等同 sentence-transformers "
-            "的預設截斷），並記錄截斷筆數；error＝直接報錯停止",
+            "auto＝自動從尾端截短過長的文字（保留前綴與開頭，等同 sentence-transformers 的預設截斷），"
+            "並記錄截短筆數；error＝直接報錯停止",
             options=["auto", "error"],
             affects_output=False,  # 沒超過上限的文字向量不受影響；截斷筆數另外記錄
+        ),
+        Param(
+            "tokenizer",
+            "截斷用的 tokenizer",
+            "text",
+            "",
+            "Hugging Face 上的模型名稱，用來在送出前精確截斷到上限（只下載 tokenizer.json）。"
+            "留空＝使用上面的模型名稱（需是 org/name 格式）；用 LiteLLM 別名時請填真正的模型，"
+            "例如 intfloat/multilingual-e5-large。拿不到 tokenizer 時改用較慢的試探法。",
+            affects_output=False,
+            placeholder="intfloat/multilingual-e5-large",
+            advanced=True,
+        ),
+        Param(
+            "max_input_tokens",
+            "輸入上限（tokens）",
+            "int",
+            None,
+            "例如 E5 為 512。留空＝服務端第一次回報過長時自動偵測",
+            affects_output=False,
+            placeholder="自動偵測",
+            advanced=True,
         ),
         timeout_param(),
         retries_param(),
         *extra_params(),
     ]
+
+    def __init__(self, params: dict | None = None):
+        super().__init__(params)
+        model = self.p.get("model") or ""
+        name = (self.p.get("tokenizer") or "").strip() or (model if "/" in model else "")
+        self.truncation_state = TruncationState(name, self.p.get("max_input_tokens"))
 
     def embed_batch(self, texts: list[str], role: str) -> np.ndarray:
         if self.p.get("truncate") == "error":

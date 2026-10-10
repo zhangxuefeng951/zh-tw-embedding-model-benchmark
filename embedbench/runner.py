@@ -119,11 +119,28 @@ def pair_label(pair: dict) -> str:
     return f"Q「{prefixes.display(q)[:24]}」D「{prefixes.display(d)[:24]}」"
 
 
+def _fill_from_preset(preset_id: str | None, provider: str, params: dict) -> dict:
+    """截斷用的 tokenizer / 上限沒填時，從預設檔補上（不影響向量，只影響過長文字的處理）。"""
+    if not preset_id:
+        return params
+    from embedbench.presets import get_preset
+
+    preset = get_preset("embedding", preset_id)
+    if not preset:
+        return params
+    source = preset.get("params") if preset.get("provider") == provider else (preset.get("provider_params") or {}).get(provider)
+    for key in ("tokenizer", "max_input_tokens"):
+        if key in params and not params.get(key) and (source or {}).get(key):
+            params[key] = source[key]
+    return params
+
+
 def normalize_embedding_config(cfg: dict) -> dict:
     provider = cfg.get("provider") or "openai"
     params = normalized_params(provider, cfg.get("params"))
     if not params.get("model"):
         raise ValueError("請填寫模型名稱")
+    params = _fill_from_preset(cfg.get("preset_id"), provider, params)
     pairs, seen = [], set()
     for p in cfg.get("prefix_pairs") or []:
         q, d = p.get("query") or "", p.get("document") or ""
@@ -247,7 +264,8 @@ def run_embedding(cfg: dict, ctx: JobContext) -> list[str]:
                     name = "文件" if role == "document" else "查詢"
                     stage = f"[{ds.name}] 計算{name}向量（前綴：{prefixes.display(template)}）"
                     bs = int(cfg["params"].get("batch_size") or 32)
-                    chunk = max(256, bs * int(cfg["params"].get("concurrency") or 1) * 4)
+                    # 每段算完就存檔；段落小一點，中斷時損失較少
+                    chunk = max(64, bs * int(cfg["params"].get("concurrency") or 1))
                     counter = cached
                     ctx.progress(stage, counter, n)
 
@@ -259,6 +277,8 @@ def run_embedding(cfg: dict, ctx: JobContext) -> list[str]:
                     for start in range(cached, n, chunk):
                         end = min(start + chunk, n)
                         arr = provider.embed(texts[start:end], role, on_progress=on_progress, check_cancel=ctx.check_cancel)
+                        for notice in provider.pop_notices():
+                            ctx.log(f"[{ds.name}] {notice}")
                         originals = {t["text"] for t in provider.pop_truncations()}
                         local = [i for i, t in enumerate(texts[start:end]) if t in originals]
                         store.append(start, arr, {"truncated": local} if local else None)
@@ -635,12 +655,14 @@ def _probe_longest_document(p, pair: dict, dataset_key: str | None, warnings: li
         )
         return info
     trunc = p.pop_truncations()
+    info["notices"] = p.pop_notices()
     if trunc:
         info.update(truncated=True, kept_chars=trunc[0]["kept_chars"])
         warnings.append(
             f"資料集中最長的文件（{len(text)} 字）超過模型長度上限，評測時會自動從尾端截短"
             f"（這篇保留前 {trunc[0]['kept_chars']} 字）；被截短的筆數會記錄在結果中。"
         )
+        warnings.extend(n for n in info["notices"] if n.startswith("無法載入 tokenizer"))
     return info
 
 

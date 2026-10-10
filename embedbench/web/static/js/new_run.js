@@ -343,7 +343,10 @@
   function longestText(longest) {
     if (!longest) return "";
     if (longest.error) return `資料集最長的文件（${longest.chars} 字）超過模型長度上限。`;
-    if (longest.truncated) return `資料集最長的文件（${longest.chars} 字）超過長度上限，會自動截短為前 ${longest.kept_chars} 字。`;
+    if (longest.truncated) {
+      const how = (longest.notices || []).find((n) => n.startsWith("使用 tokenizer")) ? "（以 tokenizer 精確截斷）" : "";
+      return `資料集最長的文件（${longest.chars} 字）超過長度上限，會自動截短為前 ${longest.kept_chars} 字${how}。`;
+    }
     return `資料集最長的文件（${longest.chars} 字）也能正常送出。`;
   }
 

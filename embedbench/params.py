@@ -94,9 +94,15 @@ def timeout_param(default: float = 120.0) -> Param:
     return Param("timeout", "逾時（秒）", "float", default, affects_output=False, advanced=True)
 
 
-def retries_param(default: int = 5) -> Param:
+def retries_param(default: int = 8) -> Param:
     return Param(
-        "max_retries", "最大重試次數", "int", default, "遇到 429 / 5xx / 連線錯誤時以指數退避重試", affects_output=False, advanced=True
+        "max_retries",
+        "最大重試次數",
+        "int",
+        default,
+        "遇到 429 / 5xx / 連線錯誤時以指數退避重試（每次間隔 1、2、4…秒，最多 60 秒；預設 8 次約可撐過 3 分鐘的服務中斷）",
+        affects_output=False,
+        advanced=True,
     )
 
 

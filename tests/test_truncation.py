@@ -135,3 +135,103 @@ def test_probe_reports_longest_document(mock_api, tiny_dataset):
     out = probe_embedding("openai", {"base_url": url, "model": "e5"}, pairs, tiny_dataset.key)
     assert out["longest"] == {**out["longest"], "truncated": False, "error": None}
     assert not out["warnings"]
+
+
+# ---- tokenizer 精確截斷 ---------------------------------------------------------
+
+
+def char_tokenizer():
+    """每個字元一個 token，前後加 [CLS] [SEP]（模擬 BERT / XLM-R 類 tokenizer）。"""
+    from tokenizers import Regex, Tokenizer, models, pre_tokenizers, processors
+
+    from embedbench.truncation import TokenTruncator
+
+    tok = Tokenizer(models.WordLevel({"[UNK]": 0, "[CLS]": 1, "[SEP]": 2}, unk_token="[UNK]"))
+    tok.pre_tokenizer = pre_tokenizers.Split(Regex("."), behavior="isolated")
+    tok.post_processor = processors.TemplateProcessing(single="[CLS] $A [SEP]", special_tokens=[("[CLS]", 1), ("[SEP]", 2)])
+    return TokenTruncator(tok, "fake/char")
+
+
+def test_token_truncator_counts_special_tokens():
+    t = char_tokenizer()
+    assert t.truncate("一二三四五", 10) == "一二三四五"
+    assert t.truncate("一二三四五六七八九十", 7) == "一二三四五"  # 7 - [CLS] - [SEP] = 5
+    assert t.truncate("passage: 很長", 6) == "pass"
+
+
+@pytest.fixture
+def fake_tokenizer(monkeypatch):
+    import embedbench.truncation as truncation
+
+    loaded = []
+
+    def load(name):
+        loaded.append(name)
+        return char_tokenizer()
+
+    monkeypatch.setattr(truncation, "load_tokenizer", load)
+    return loaded
+
+
+def test_tokenizer_pretruncation_sends_no_rejected_requests(mock_api, fake_tokenizer):
+    state, url = mock_api
+    state.max_tokens, state.special_tokens = 40, 2
+    p = create_provider(
+        "openai",
+        {"base_url": url, "model": "multilingual-e5-large", "tokenizer": "intfloat/multilingual-e5-large", "max_input_tokens": 40, "concurrency": 1},
+    )
+    texts = ["passage: 短文"] + [f"passage: 第{i}篇" + "很長的段落內容" * 30 for i in range(10)]
+    vecs = p.embed(texts, "document")
+    assert vecs.shape == (11, 256)
+    assert state.rejected == 0  # 送出前就截到上限，完全沒有被拒絕的請求
+    trunc = p.pop_truncations()
+    assert len(trunc) == 10 and all(t["kept_chars"] == 38 for t in trunc)  # 40 - 2 個特殊 token
+    assert fake_tokenizer == ["intfloat/multilingual-e5-large"]
+    assert any("使用 tokenizer" in n for n in p.pop_notices())
+
+
+def test_tokenizer_with_auto_detected_limit(mock_api, fake_tokenizer):
+    state, url = mock_api
+    state.max_tokens, state.special_tokens = 40, 2
+    p = create_provider("openai", {"base_url": url, "model": "intfloat/multilingual-e5-large", "batch_size": 4, "concurrency": 1})
+    texts = [f"passage: 第{i}篇" + "很長的段落內容" * 30 for i in range(12)]
+    p.embed(texts, "document")
+    assert state.rejected == 1  # 只有第一次被拒絕（得知上限 40），之後都先用 tokenizer 截斷
+    assert all(t["kept_chars"] == 38 for t in p.pop_truncations())
+    notices = p.pop_notices()
+    assert any("上限為 40" in n for n in notices) and any("使用 tokenizer" in n for n in notices)
+
+
+def test_tokenizer_load_failure_falls_back_to_search(mock_api, monkeypatch):
+    import embedbench.truncation as truncation
+
+    def fail(name):
+        raise OSError("offline")
+
+    monkeypatch.setattr(truncation, "load_tokenizer", fail)
+    state, url = mock_api
+    state.max_tokens = 40
+    p = create_provider("openai", {"base_url": url, "model": "org/model", "concurrency": 1})
+    p.embed(["passage: " + "很長的段落內容" * 30], "document")
+    assert p.pop_truncations()[0]["kept_chars"] <= 40
+    assert any(n.startswith("無法載入 tokenizer org/model") for n in p.pop_notices())
+
+
+def test_rerun_fills_tokenizer_from_preset():
+    from embedbench.runner import normalize_embedding_config
+
+    cfg = normalize_embedding_config(
+        {
+            "preset_id": "multilingual-e5-large",
+            "provider": "openai",
+            "params": {"base_url": "http://x/v1", "model": "multilingual-e5-large"},  # LiteLLM 別名
+            "datasets": ["drcd-test"],
+        }
+    )
+    assert cfg["params"]["tokenizer"] == "intfloat/multilingual-e5-large"
+    assert cfg["params"]["max_input_tokens"] == 512
+    # 使用者自己填的值不會被覆蓋
+    cfg = normalize_embedding_config(
+        {"preset_id": "multilingual-e5-large", "params": {"model": "m", "tokenizer": "my/tok", "max_input_tokens": 256}, "datasets": ["drcd-test"]}
+    )
+    assert cfg["params"]["tokenizer"] == "my/tok" and cfg["params"]["max_input_tokens"] == 256

@@ -21,6 +21,8 @@ presets:
     params:
       base_url: http://localhost:8000/v1
       model: intfloat/multilingual-e5-large
+      tokenizer: intfloat/multilingual-e5-large  # 用 LiteLLM 等別名當模型名稱時，這裡仍填真正的 Hugging Face 模型
+      max_input_tokens: 512
     provider_params:
       sentence_transformers:
         model: intfloat/multilingual-e5-large
@@ -45,6 +47,8 @@ presets:
     params:
       base_url: http://localhost:8000/v1
       model: intfloat/e5-large-v2
+      tokenizer: intfloat/e5-large-v2  # 用 LiteLLM 等別名當模型名稱時，這裡仍填真正的 Hugging Face 模型
+      max_input_tokens: 512
     provider_params:
       sentence_transformers:
         model: intfloat/e5-large-v2
@@ -64,6 +68,8 @@ presets:
     params:
       base_url: http://localhost:8000/v1
       model: intfloat/multilingual-e5-large-instruct
+      tokenizer: intfloat/multilingual-e5-large-instruct  # 用 LiteLLM 等別名當模型名稱時，這裡仍填真正的 Hugging Face 模型
+      max_input_tokens: 512
     provider_params:
       sentence_transformers:
         model: intfloat/multilingual-e5-large-instruct
@@ -89,6 +95,7 @@ presets:
     params:
       base_url: http://localhost:8000/v1
       model: google/embeddinggemma-2
+      tokenizer: google/embeddinggemma-2  # 超過上限時才下載（需要 HF_TOKEN 並同意模型授權）
     provider_params:
       sentence_transformers:
         model: google/embeddinggemma-2

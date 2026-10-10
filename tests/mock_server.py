@@ -38,6 +38,8 @@ class MockState:
         self.max_tokens = None  # 模擬模型的輸入長度上限（以字元數當 token 數）
         self.error_style = "litellm"  # litellm（經 LiteLLM 包裝的 vLLM 訊息）| tei | openai
         self.chars_per_token = 1.0  # 模擬 tokenizer：每個 token 幾個字元
+        self.special_tokens = 0  # 每筆文字額外的特殊 token（例如 [CLS] [SEP]）
+        self.rejected = 0  # 因為過長被拒絕的請求數
         self.lock = threading.Lock()
 
 
@@ -68,10 +70,12 @@ def make_handler(state: MockState):
                     inputs = [inputs]
                 dims = int(body.get("dimensions") or state.dims)
                 def tokens(t: str) -> int:
-                    return int(len(t) / state.chars_per_token + 0.999)
+                    return int(len(t) / state.chars_per_token + 0.999) + state.special_tokens
 
                 too_long = [t for t in inputs if state.max_tokens and tokens(t) > state.max_tokens]
                 if too_long:
+                    with state.lock:
+                        state.rejected += 1
                     n, limit = tokens(too_long[0]), state.max_tokens
                     if state.error_style == "tei":
                         msg = f"Input validation error: `inputs` must have less than {limit} tokens. Given: {n}"
